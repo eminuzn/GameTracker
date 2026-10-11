@@ -45,6 +45,15 @@ internal static class Program
         try
         {
             window.Show(); Flush();
+            var interactiveLabel = new TextBlock { Text = "Double click to play" };
+            var favoriteButton = new Button { Content = new TextBlock { Text = "★" } };
+            var editBox = new TextBox();
+            var cardContents = new StackPanel(); cardContents.Children.Add(interactiveLabel); cardContents.Children.Add(favoriteButton); cardContents.Children.Add(editBox);
+            var interactiveCard = new ListBoxItem { Content = cardContents }; interactiveCard.ApplyTemplate();
+            Require(GameCardInteraction.FindItem(interactiveLabel) == interactiveCard, "Game title must resolve to the clicked card");
+            Require(GameCardInteraction.FindItem((TextBlock)favoriteButton.Content) is null, "Double clicking favorite must not launch game");
+            Require(GameCardInteraction.FindItem(editBox) is null, "Double clicking editable text must not launch game");
+            Require(GameCardInteraction.FindItem(list) is null, "Double clicking library background must not launch game");
             var grid = Descendant<LibraryGridPanel>(list)!;
             var scroll = Descendant<ScrollViewer>(list)!;
             void CheckVisible()
@@ -95,7 +104,7 @@ internal static class Program
                     Console.WriteLine($"PASS grid: {count} games, {columns} columns, repeated end/top and overlapping scrolling, filters, collection changes and resize");
                 }
             }
-            Console.WriteLine($"{assertions} grid assertions passed across 6 scenarios.");
+            Console.WriteLine($"{assertions} desktop assertions passed across 6 grid scenarios and card interactions.");
         }
         finally { window.Close(); app.Shutdown(); }
     }

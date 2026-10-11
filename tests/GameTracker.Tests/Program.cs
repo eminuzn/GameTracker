@@ -6,6 +6,16 @@ using GameTracker.CoverService;
 using Microsoft.Extensions.Configuration;
 using System.Buffers.Binary;
 
+// Optional live, read-only Steam check; never writes to a library or database.
+if (args is ["--check-version", var versionTitle, var localVersion])
+{
+    using var http = new HttpClient { Timeout = TimeSpan.FromSeconds(15) };
+    http.DefaultRequestHeaders.UserAgent.ParseAdd("GameTracker/1.0");
+    var result = await new SteamVersionClient(http).CheckAsync(versionTitle, localVersion, LocalVersionKind.Release, default);
+    Console.WriteLine(System.Text.Json.JsonSerializer.Serialize(result, new System.Text.Json.JsonSerializerOptions { WriteIndented = true }));
+    return;
+}
+
 // Explicit, read-only diagnostics for a real game. Database and covers go to a
 // separate temp directory; no launch, deletion or writes to the user's library.
 if (args is ["--inspect-game", var realFolder])
@@ -50,6 +60,51 @@ Check("Shopping title accepts platform labels", ShoppingMatcher.Matches("GTAV En
 Check("Shopping keeps game edition distinct", !ShoppingMatcher.Matches("GTAV Enhanced", "Grand Theft Auto V Legacy PC") && !ShoppingMatcher.Matches("GTA5", "Grand Theft Auto V Enhanced PC"));
 Check("Shopping rejects sequel and merchandising", !ShoppingMatcher.Matches("Demo Game", "Demo Game 2 PC") && !ShoppingMatcher.Matches("Demo Game", "Demo Game Poster") && !ShoppingMatcher.Matches("Demo Game", "Demo Game Soundtrack"));
 Check("Shopping search uses canonical title", ShoppingMatcher.SearchUrl("GTAV Enhanced").EndsWith("Grand%20Theft%20Auto%20V%20Enhanced"));
+
+Check("Version files accept plain and labelled release", GameVersionDetector.ParseText("v2.31") == "2.31" && GameVersionDetector.ParseText("GameVersion=1.2.3\r\nName=Demo") == "1.2.3");
+Check("Conflicting version labels stay unknown", GameVersionDetector.ParseText("version=1.2\nversion=1.3") is null);
+Check("Arbitrary dates and text are not versions", GameVersionDetector.ParseText("Released 2025-01-01") is null);
+Check("Zero placeholder is not a game version", GameVersionDetector.ParseText("0.0.0.0") is null);
+Check("Version comparison is numeric", GameVersionDetector.Compare("1.9.0", "1.10.0", LocalVersionKind.Release) < 0);
+Check("Version comparison accepts equal and newer", GameVersionDetector.Compare("v2.31", "2.31", LocalVersionKind.Release) == 0 && GameVersionDetector.Compare("2.32", "2.31", LocalVersionKind.Release) > 0);
+Check("Version precision is never guessed", GameVersionDetector.Compare("1.0.3095.0", "1.72", LocalVersionKind.Release) is null && GameVersionDetector.Compare("1.2.0", "1.2", LocalVersionKind.ProductMetadata) is null);
+Check("Build IDs and file metadata cannot masquerade as release numbers", GameVersionDetector.Compare("123456", "2.31", LocalVersionKind.Build) is null && GameVersionDetector.Compare("1.2", "1.3", LocalVersionKind.FileMetadata) is null);
+Check("Pre-release strings are not stable versions", GameVersionDetector.Compare("1.2-beta", "1.3", LocalVersionKind.Release) is null);
+Check("Steam released patch and update titles parsed", SteamVersionClient.ReleasedVersion("Patch 2.31") == "2.31" && SteamVersionClient.ReleasedVersion("Update v1.10.2 is live!") == "1.10.2");
+Check("Steam preview future platform and ambiguous titles rejected", new[] { "Update 2.3 is coming!", "Patch 1.5 beta", "Update 1.5 Linux", "Patch 1.4 and Update 1.5", "Photo Mode Challenge 3.0", "Hotfix #12" }.All(s => SteamVersionClient.ReleasedVersion(s) is null));
+string steamNews = """
+{"appnews":{"appid":42,"newsitems":[
+{"title":"Update 2.32 is coming!","feedname":"steam_community_announcements","date":1700000005,"url":"https://steamcommunity.com/announcements/preview"},
+{"title":"Patch 8.99","feedname":"external_press","date":1700000004,"url":"https://example.com/press"},
+{"title":"Patch 2.31","feedname":"steam_community_announcements","date":1700000003,"url":"https://steamcommunity.com/announcements/latest"},
+{"title":"Patch 2.30","feedname":"steam_community_announcements","date":1700000002,"url":"https://steamcommunity.com/announcements/older"}]}}
+""";
+string steamSearch = """{"items":[{"type":"app","id":42,"name":"Demo Game"}]}""";
+string steamDetails = """{"42":{"success":true,"data":{"type":"game","name":"Demo Game"}}}""";
+var versionCalls = 0;
+using (var versionHttp = new HttpClient(new FakeHandler(request =>
+{
+    versionCalls++;
+    return Json(request.RequestUri!.AbsolutePath.Contains("storesearch") ? steamSearch : request.RequestUri.AbsolutePath.Contains("appdetails") ? steamDetails : steamNews);
+})))
+{
+    var checker = new SteamVersionClient(versionHttp);
+    var skipped = await checker.CheckAsync("Demo Game", "", LocalVersionKind.Release, default);
+    Check("Missing local version makes no HTTP requests", skipped.State == VersionCheckState.None && versionCalls == 0);
+    var oldVersion = await checker.CheckAsync("Demo Game", "2.30", LocalVersionKind.Release, default);
+    Check("Older local version flags official released patch only", oldVersion.State == VersionCheckState.Outdated && oldVersion.Version == "2.31" && oldVersion.Url == "https://steamcommunity.com/announcements/latest");
+    Check("Matching Steam announcement version detected", (await checker.CheckAsync("Demo Game", "2.31", LocalVersionKind.Release, default)).State == VersionCheckState.Matches);
+    Check("Newer local version is not marked outdated", (await checker.CheckAsync("Demo Game", "2.32", LocalVersionKind.Release, default)).State == VersionCheckState.Newer);
+    Check("Mismatched PE version stays uncomparable", (await checker.CheckAsync("Demo Game", "1.0.3095.0", LocalVersionKind.FileMetadata, default)).State == VersionCheckState.Unavailable);
+    steamNews = """{"appnews":{"appid":42,"newsitems":[{"title":"Update 2.32 is coming!","feedname":"steam_community_announcements","date":1700000005,"url":"https://steamcommunity.com/news"}]}}""";
+    Check("No released version does not imply current", (await checker.CheckAsync("Demo Game", "2.31", LocalVersionKind.Release, default)).State == VersionCheckState.Unavailable);
+    steamSearch = """{"items":[{"type":"app","id":42,"name":"Demo Game"},{"type":"app","id":43,"name":"Demo Game"}]}""";
+    var calls = versionCalls;
+    Check("Ambiguous Steam game rejected before news request", (await checker.CheckAsync("Demo Game", "2.31", LocalVersionKind.Release, default)).State == VersionCheckState.Unavailable && versionCalls == calls + 1);
+    steamSearch = """{"items":[{"type":"app","id":42,"name":"Demo Game"}]}""";
+    steamDetails = """{"42":{"success":true,"data":{"type":"dlc","name":"Demo Game"}}}""";
+    Check("DLC is not compared with main game version", (await checker.CheckAsync("Demo Game", "2.31", LocalVersionKind.Release, default)).State == VersionCheckState.Unavailable);
+}
 
 var recent = new Game { Name = "Zulu", LastPlayedAt = DateTimeOffset.UtcNow, SizeBytes = 11_000_000_000 };
 var older = new Game { Name = "Alpha", LastPlayedAt = recent.LastPlayedAt.Value.AddDays(-1), SizeBytes = 2_000_000_000 };
@@ -137,6 +192,34 @@ try
     var exe = Path.Combine(bin, "DemoGame.exe"); File.WriteAllBytes(exe, new byte[100]);
     File.WriteAllBytes(Path.Combine(gameDir, "uninstall.exe"), new byte[10]); File.WriteAllBytes(Path.Combine(gameDir, "data.dat"), new byte[200]);
     var game = new Game { RootPath = root, FolderPath = gameDir, Name = "Demo Game" };
+    var versionProbe = new Game { RootPath = root, FolderPath = gameDir, LaunchExe = Path.GetRelativePath(gameDir, exe) };
+    var versionFile = Path.Combine(gameDir, "version.txt"); File.WriteAllText(versionFile, "version=1.2.3");
+    Check("Version file found for executable in deep folder", GameVersionDetector.Detect(versionProbe, default) is { Value: "1.2.3", Kind: LocalVersionKind.Release, Source: "version.txt" });
+    Check("Root version can be read before executable selection", GameVersionDetector.Detect(game, default) is { Value: "1.2.3" });
+    File.WriteAllText(versionFile, "build=1.2.3");
+    Check("Dotted build labels stay in build namespace", GameVersionDetector.Detect(versionProbe, default) is { Value: "1.2.3", Kind: LocalVersionKind.Build });
+    File.WriteAllText(versionFile, new string('x', 20_000));
+    Check("Oversized version files ignored", GameVersionDetector.Detect(versionProbe, default) is null);
+    File.Delete(versionFile);
+    var binVersion = Path.Combine(bin, "version.json"); File.WriteAllText(binVersion, "{\"gameVersion\":\"2.31\"}");
+    var buildFile = Path.Combine(gameDir, "build.txt"); File.WriteAllText(buildFile, "123456");
+    Check("Version JSON near selected executable detected", GameVersionDetector.Detect(versionProbe, default) is { Value: "2.31", Kind: LocalVersionKind.Release });
+    File.Delete(binVersion);
+    Check("Build ID retained without comparing it to release version", GameVersionDetector.Detect(versionProbe, default) is { Value: "123456", Kind: LocalVersionKind.Build });
+    File.Delete(buildFile);
+    using (var cancelledVersion = new CancellationTokenSource())
+    {
+        cancelledVersion.Cancel();
+        try { GameVersionDetector.Detect(versionProbe, cancelledVersion.Token); throw new Exception("Version cancellation ignored"); }
+        catch (OperationCanceledException) { Check("Local version detection supports cancellation", true); }
+    }
+    var versionRecord = new Game { LocalVersion = "2.30", ManualVersion = true, VersionKind = LocalVersionKind.Release, VersionCheck = VersionCheckState.Outdated, SteamVersion = "2.31" };
+    var roundtripVersion = System.Text.Json.JsonSerializer.Deserialize<Game>(System.Text.Json.JsonSerializer.Serialize(versionRecord))!;
+    Check("Manual version and warning survive JSON persistence", roundtripVersion.ManualVersion && roundtripVersion.LocalVersion == "2.30" && roundtripVersion.IsOutdated);
+    versionRecord.ResetVersionCheck();
+    Check("Changed version clears outdated state", !versionRecord.IsOutdated && versionRecord.SteamVersion is null);
+    versionRecord.LocalVersion = null; versionRecord.VersionCheck = VersionCheckState.Outdated;
+    Check("Unknown local version never shows outdated badge", !versionRecord.IsOutdated && !versionRecord.HasVersion);
     var result = GameScanner.Scan(gameDir, game.Name, default);
     Check("Deep scan sums files exactly", result.Bytes == 310);
     Check("Deep executable discovered", result.Candidates.Any(x => x.RelativePath == Path.GetRelativePath(gameDir, exe)));

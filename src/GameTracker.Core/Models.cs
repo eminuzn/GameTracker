@@ -21,6 +21,15 @@ public sealed class Game : INotifyPropertyChanged
     public string? RootIdentity { get; set; }
     public string? FolderIdentity { get; set; }
     public string Name { get; set; } = "";
+    public string? LocalVersion { get; set; }
+    public bool ManualVersion { get; set; }
+    public string? VersionSource { get; set; }
+    public LocalVersionKind VersionKind { get; set; }
+    public VersionCheckState VersionCheck { get; set; }
+    public string? SteamVersion { get; set; }
+    public string? VersionCheckMessage { get; set; }
+    public string? VersionCheckUrl { get; set; }
+    public DateTimeOffset? VersionCheckedAt { get; set; }
     public string? LaunchExe { get; set; }
     public string? WorkingDirectory { get; set; }
     public string Arguments { get; set; } = "";
@@ -47,6 +56,22 @@ public sealed class Game : INotifyPropertyChanged
     public string CoverStatus { get; set; } = "Kapak bekleniyor";
     [JsonIgnore] public bool IsRunning { get; set; }
     [JsonIgnore] public bool NeedsExeSelection => string.IsNullOrWhiteSpace(LaunchExe);
+    [JsonIgnore] public bool HasVersion => !string.IsNullOrWhiteSpace(LocalVersion);
+    [JsonIgnore] public bool IsOutdated => HasVersion && VersionCheck == VersionCheckState.Outdated;
+    [JsonIgnore] public string VersionText => HasVersion ? (VersionKind == LocalVersionKind.Build ? "Build " : "v") + LocalVersion : "Sürüm bilinmiyor";
+    [JsonIgnore] public string VersionStatusText => VersionCheck switch
+    {
+        VersionCheckState.Outdated => "⚠ Güncel değil",
+        VersionCheckState.Matches => "Steam duyurusuyla eşleşiyor",
+        VersionCheckState.Newer => "Yerel sürüm daha yeni",
+        VersionCheckState.Unavailable => "Karşılaştırılamadı",
+        VersionCheckState.Error => "Kontrol başarısız",
+        _ => HasVersion ? "Henüz kontrol edilmedi" : "Sürüm yok · kontrole dahil edilmez"
+    };
+    [JsonIgnore] public string VersionTooltip => $"{VersionText}\nKaynak: {VersionSource ?? "Bilinmiyor"}\n{VersionStatusText}\n{VersionCheckMessage}" +
+        (VersionCheckedAt is { } checkedAt ? $"\nSon kontrol: {checkedAt.ToLocalTime():dd.MM.yyyy HH:mm}" : "");
+    public void ResetVersionCheck()
+    { VersionCheck = VersionCheckState.None; SteamVersion = null; VersionCheckMessage = null; VersionCheckUrl = null; VersionCheckedAt = null; }
     [JsonIgnore] public string FavoriteGlyph => IsFavorite ? "★" : "☆";
     [JsonIgnore] public string FavoriteActionText => IsFavorite ? "Favorilerden çıkar" : "Favorilere ekle";
     [JsonIgnore] public string SizeText => $"{(SkippedEntries > 0 ? "En az " : "")}{SizeBytes / 1e9:N1} GB";
@@ -57,6 +82,9 @@ public sealed class Game : INotifyPropertyChanged
     public event PropertyChangedEventHandler? PropertyChanged;
     public void Refresh() => PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(null));
 }
+
+public enum LocalVersionKind { Unknown, Release, ProductMetadata, FileMetadata, Build }
+public enum VersionCheckState { None, Matches, Outdated, Newer, Unavailable, Error }
 
 public sealed class PlaySession
 {

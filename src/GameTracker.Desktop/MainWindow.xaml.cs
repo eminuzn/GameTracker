@@ -1,9 +1,12 @@
 using System.Collections.ObjectModel;
 using System.ComponentModel;
 using System.Diagnostics;
+using System.Net.Http;
 using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Data;
+using System.Windows.Input;
+using System.Windows.Media;
 using System.Windows.Threading;
 using GameTracker.Core;
 using GameTracker.Infrastructure;
@@ -24,6 +27,8 @@ public partial class MainWindow : Window
     private readonly SessionTracker tracker;
     private readonly CoverClient covers;
     private readonly InitialPlayHistory initialPlayHistory;
+    private readonly HttpClient versionHttp = new() { Timeout = TimeSpan.FromSeconds(15) };
+    private readonly SteamVersionClient versions;
     private readonly LibraryViewSettings viewSettings;
     private readonly CancellationTokenSource lifetime = new();
     private readonly DispatcherTimer monitor = new() { Interval = TimeSpan.FromSeconds(2) };
@@ -32,7 +37,8 @@ public partial class MainWindow : Window
     private readonly Forms.NotifyIcon tray;
     private readonly System.Drawing.Icon trayIcon;
     private CancellationTokenSource? scan;
-    private bool busy, ticking, exiting, detailDirty, editingCover, initializingView = true;
+    private CancellationTokenSource? versionScan;
+    private bool busy, ticking, exiting, detailDirty, versionDirty, editingCover, initializingView = true;
     private long lastRootCheck;
     private readonly Dictionary<Guid, bool> rootAvailability = [];
     private Game? Selected => GamesList.SelectedItem as Game;
@@ -47,6 +53,8 @@ public partial class MainWindow : Window
         roots = store.Roots(); games = new(store.Games());
         viewSettings = store.LoadViewSettings();
         tracker = new(store); covers = new(store, DesktopSettings.Load()); initialPlayHistory = new(store);
+        versionHttp.DefaultRequestHeaders.UserAgent.ParseAdd("GameTracker/1.0");
+        versions = new(versionHttp);
         GamesList.ItemsSource = games;
         var view = (ListCollectionView)CollectionViewSource.GetDefaultView(games);
         view.Filter = x => x is Game g && GameListComparer.Matches(g, SearchBox.Text, viewSettings.FavoritesOnly, viewSettings.ExeSelectionOnly);
@@ -72,6 +80,7 @@ public partial class MainWindow : Window
         rescanTimer.Tick += async (_, _) => { rescanTimer.Stop(); if (!busy) await ScanAsync(); else ScheduleScan(); };
         SystemEvents.PowerModeChanged += PowerChanged;
         NameBox.TextChanged += (_, _) => detailDirty = true;
+        VersionBox.TextChanged += (_, _) => { detailDirty = true; versionDirty = true; };
         ArgsBox.TextChanged += (_, _) => detailDirty = true;
         WorkingBox.TextChanged += (_, _) => detailDirty = true;
         Loaded += async (_, _) => { await ScanAsync(); };
@@ -94,6 +103,7 @@ public partial class MainWindow : Window
         exiting = true; lifetime.Cancel(); monitor.Stop(); rescanTimer.Stop();
         SystemEvents.PowerModeChanged -= PowerChanged;
         foreach (var watcher in watchers) watcher.Dispose();
+        versionScan?.Cancel(); versionHttp.Dispose();
         tracker.Stop(); tray.Dispose(); trayIcon.Dispose(); Close(); System.Windows.Application.Current.Shutdown();
     }
     private void PowerChanged(object sender, PowerModeChangedEventArgs e) => Dispatcher.BeginInvoke(() => tracker.Suspend());
@@ -112,7 +122,8 @@ public partial class MainWindow : Window
         catch (Exception ex) { ShowError("Klasör ekleme", ex); }
     }
     private async void Rescan_Click(object sender, RoutedEventArgs e) { if (!busy) await ScanAsync(); }
-    private void CancelScan_Click(object sender, RoutedEventArgs e) => scan?.Cancel();
+    private void CancelScan_Click(object sender, RoutedEventArgs e) { scan?.Cancel(); versionScan?.Cancel(); }
+    private void UpdateCancelButton() => CancelButton.Visibility = scan is not null || versionScan is not null ? Visibility.Visible : Visibility.Collapsed;
     private void ScheduleScan()
     {
         if (exiting) return;
@@ -181,6 +192,7 @@ public partial class MainWindow : Window
                         catch (IOException) { game.LaunchExe = null; game.ManualExe = false; }
                     }
                     if (game.LaunchExe is null && GameScanner.Suggest(result.Candidates) is { } suggested) game.LaunchExe = suggested.RelativePath;
+                    await DetectVersionAsync(game, scan.Token);
                     store.SaveGame(game); game.Refresh();
                     await initialPlayHistory.ImportAsync(game, scan.Token);
                     if (GameListComparer.IsVisible(game)) _ = FetchCoverAsync(game);
@@ -191,7 +203,7 @@ public partial class MainWindow : Window
         }
         catch (OperationCanceledException) { StatusText.Text = "Tarama durduruldu. Tamamlanan kayıtlar korundu."; }
         catch (Exception ex) { ShowError("Tarama", ex); }
-        finally { scan.Dispose(); scan = null; busy = false; CancelButton.Visibility = Visibility.Collapsed; UpdateSummary(); UpdateDetails(false); }
+        finally { scan.Dispose(); scan = null; busy = false; UpdateCancelButton(); UpdateSummary(); UpdateDetails(false); }
     }
     private async Task FetchCoverAsync(Game game)
     {
@@ -315,21 +327,41 @@ public partial class MainWindow : Window
         ManualCoverButton.IsEnabled = g is not null && !editingCover;
         RetryCoverButton.IsEnabled = g is not null && !editingCover;
         ShoppingSearchButton.IsEnabled = g is not null;
+        CheckVersionsButton.IsEnabled = !busy && versionScan is null;
+        CheckVersionButton.IsEnabled = g is { HasVersion: true } && !busy && versionScan is null;
+        DetectVersionButton.IsEnabled = g is { Available: true } && !busy;
+        VersionCheckText.Text = g?.VersionStatusText ?? "";
+        VersionCheckText.ToolTip = g?.VersionTooltip;
+        VersionCheckText.Foreground = new SolidColorBrush((Color)ColorConverter.ConvertFromString(g?.IsOutdated == true ? "#FFCA66" : "#8E9AB3"));
+        VersionSourceText.Text = g?.VersionSource is { } source ? "Kaynak: " + source : "";
+        VersionNewsButton.IsEnabled = g?.VersionCheckUrl is not null;
+        if (g?.SteamVersion is { } steamVersion) VersionCheckText.Text += " · Steam: " + steamVersion;
         RetryCoverButton.Content = g?.ManualCover == true ? "Otomatik kapağa dön" : "Kapağı yeniden ara";
         FavoriteButton.Content = g is null ? "☆ Favorilere ekle" : g.FavoriteGlyph + " " + g.FavoriteActionText;
-        if (g is null) { DetailTitle.Text = "Bir oyun seç"; DetailInfo.Text = ""; SessionsText.Text = ""; AttributionText.Text = ""; return; }
+        if (g is null) { DetailTitle.Text = "Bir oyun seç"; DetailInfo.Text = ""; SessionsText.Text = ""; AttributionText.Text = ""; NameBox.Text = VersionBox.Text = ArgsBox.Text = WorkingBox.Text = ""; detailDirty = versionDirty = false; return; }
         DetailTitle.Text = g.Name;
         DetailInfo.Text = $"{g.StatusText}\n{g.SizeText} · {g.TimeText}\nSon oynama: {g.LastPlayedText}\n\n{g.FolderPath}\nExe: {g.LaunchExe ?? "Henüz seçilmedi"}\nBoyut ölçümü: {g.SizeUpdatedAt?.ToLocalTime():dd.MM HH:mm}";
         if (g.LastPlayedFromPrefetch) DetailInfo.Text += "\nSon oynama kaynağı: Windows Prefetch";
-        if (populate || !detailDirty) { NameBox.Text = g.Name; ArgsBox.Text = g.Arguments; WorkingBox.Text = g.WorkingDirectory ?? ""; detailDirty = false; }
+        if (populate || !detailDirty) { NameBox.Text = g.Name; VersionBox.Text = g.LocalVersion ?? ""; ArgsBox.Text = g.Arguments; WorkingBox.Text = g.WorkingDirectory ?? ""; detailDirty = versionDirty = false; }
         SessionsText.Text = string.Join("\n\n", store.Sessions(g.Id).Select(s => $"{s.StartedAt.ToLocalTime():dd.MM.yyyy HH:mm} · {TimeSpan.FromMilliseconds(s.DurationMs).TotalMinutes:N0} dk\n{(s.Status == "Running" ? "Çalışıyor" : s.Status == "Completed" ? "Tamamlandı" : "Takip kesildi")}"));
         AttributionText.Text = g.ManualCover ? "Kapak: elle seçildi" : g.CoverProvider is null ? g.CoverStatus : "Kapak kaynağı: " + g.CoverProvider + "\n" + g.CoverAttribution;
     }
-    private void SelectExe_Click(object sender, RoutedEventArgs e)
+    private async void SelectExe_Click(object sender, RoutedEventArgs e)
     {
         if (busy || Selected is not { } game) return;
         var picker = new ExePicker(game) { Owner = this };
-        if (picker.ShowDialog() == true) { game.LaunchExe = picker.SelectedRelativePath; game.ManualExe = true; store.SaveGame(game); game.Refresh(); UpdateSummary(); UpdateDetails(true); }
+        if (picker.ShowDialog() == true)
+        {
+            game.LaunchExe = picker.SelectedRelativePath; game.ManualExe = true;
+            store.SaveGame(game); game.Refresh(); UpdateSummary(); UpdateDetails(true);
+            try
+            {
+                await DetectVersionAsync(game, lifetime.Token);
+                if (!exiting) { store.SaveGame(game); game.Refresh(); UpdateDetails(false); }
+            }
+            catch (OperationCanceledException) { }
+            catch (Exception ex) { if (!exiting) ShowError("Sürüm algılama", ex); }
+        }
     }
     private void SelectRuntime_Click(object sender, RoutedEventArgs e)
     {
@@ -338,9 +370,16 @@ public partial class MainWindow : Window
         if (picker.ShowDialog() == true && picker.SelectedRelativePath is { } path)
         { if (!game.RuntimeExes.Contains(path)) game.RuntimeExes.Add(path); store.SaveGame(game); StatusText.Text = "Takip exe'si kaydedildi: " + path; }
     }
+    private void Game_DoubleClick(object sender, MouseButtonEventArgs e)
+    {
+        if (e.ChangedButton != MouseButton.Left || e.ClickCount != 2 || busy) return;
+        var item = GameCardInteraction.FindItem(e.OriginalSource as DependencyObject);
+        if (item?.DataContext is not Game game || !game.Available || game.IsRunning) return;
+        GamesList.SelectedItem = game; e.Handled = true; Play_Click(sender, e);
+    }
     private void Play_Click(object sender, RoutedEventArgs e)
     {
-        if (busy || Selected is not { } game) return;
+        if (busy || Selected is not { Available: true, IsRunning: false } game) return;
         if (game.LaunchExe is null) { SelectExe_Click(sender, e); if (game.LaunchExe is null) return; }
         try { var result = GameOperations.Launch(game); tracker.RegisterLaunch(game, result.Pid, result.Started); StatusText.Text = "Başlatıldı: " + game.Name; }
         catch (Exception ex) { ShowError("Başlatma", ex); }
@@ -355,11 +394,104 @@ public partial class MainWindow : Window
             if (cwd is not null)
             { if (!Directory.Exists(cwd) || !PathPolicy.Equal(cwd, game.FolderPath) && !PathPolicy.Within(game.FolderPath, cwd)) throw new IOException("Çalışma dizini oyun klasörünün içinde olmalı."); PathPolicy.EnsureNoLinks(cwd); }
             var changed = game.Name != NameBox.Text.Trim();
+            if (VersionBox.Text.Trim().Length > 80) throw new IOException("Sürüm en fazla 80 karakter olabilir.");
+            var version = string.IsNullOrWhiteSpace(VersionBox.Text) ? null : GameVersionDetector.ParseText(VersionBox.Text.Trim()) ?? VersionBox.Text.Trim();
+            if (versionDirty || game.LocalVersion != version)
+            {
+                game.LocalVersion = version; game.ManualVersion = true; game.VersionSource = "Elle girildi";
+                game.VersionKind = LocalVersionKind.Release; game.ResetVersionCheck();
+            }
+            if (changed) game.ResetVersionCheck();
             game.Name = NameBox.Text.Trim(); game.Arguments = ArgsBox.Text; game.WorkingDirectory = cwd;
             if (changed && game.CoverPath is null) { game.CoverRetryAt = null; _ = FetchCoverAsync(game); }
             store.SaveGame(game); game.Refresh(); detailDirty = false; UpdateSummary(); UpdateDetails(true);
         }
         catch (Exception ex) { ShowError("Detay kaydetme", ex); }
+    }
+    private async Task DetectVersionAsync(Game game, CancellationToken ct)
+    {
+        if (game.ManualVersion) return;
+        var exe = game.LaunchExe; var folder = game.FolderPath;
+        var probe = new Game { LaunchExe = exe, FolderPath = folder, RootPath = game.RootPath };
+        try
+        {
+            var result = await Task.Run(() => GameVersionDetector.Detect(probe, ct), ct);
+            if (game.ManualVersion || game.LaunchExe != exe || game.FolderPath != folder) return;
+            if (game.LocalVersion != result?.Value || game.VersionKind != (result?.Kind ?? LocalVersionKind.Unknown)) game.ResetVersionCheck();
+            game.LocalVersion = result?.Value; game.VersionSource = result?.Source; game.VersionKind = result?.Kind ?? LocalVersionKind.Unknown;
+        }
+        catch (OperationCanceledException) { throw; }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+        { store.Log("Yerel sürüm okuma", ex); }
+    }
+    private async void DetectVersion_Click(object sender, RoutedEventArgs e)
+    {
+        if (busy || Selected is not { } game) return;
+        busy = true; UpdateDetails(false);
+        try
+        {
+            game.ManualVersion = false;
+            await DetectVersionAsync(game, lifetime.Token);
+            store.SaveGame(game); game.Refresh(); UpdateDetails(true);
+            StatusText.Text = game.HasVersion ? "Sürüm algılandı: " + game.LocalVersion : "Dosyalarda oyun sürümü bulunamadı; elle girebilirsin.";
+        }
+        catch (OperationCanceledException) { }
+        catch (Exception ex) { ShowError("Sürüm algılama", ex); }
+        finally { busy = false; UpdateDetails(false); }
+    }
+    private async void CheckVersions_Click(object sender, RoutedEventArgs e)
+    {
+        var eligible = games.Where(g => GameListComparer.IsVisible(g) && g.Available && g.HasVersion).ToArray();
+        await CheckVersionsAsync(eligible);
+    }
+    private async void CheckVersion_Click(object sender, RoutedEventArgs e)
+    {
+        if (Selected is { HasVersion: true } game) await CheckVersionsAsync([game]);
+    }
+    private async Task CheckVersionsAsync(Game[] eligible)
+    {
+        if (busy || exiting || versionScan is not null) return;
+        if (eligible.Length == 0) { StatusText.Text = "Kontrol edilecek sürümü bilinen oyun yok."; return; }
+        versionScan = CancellationTokenSource.CreateLinkedTokenSource(lifetime.Token);
+        var ct = versionScan.Token; UpdateCancelButton(); UpdateDetails(false);
+        int completed = 0, outdated = 0, unavailable = 0;
+        try
+        {
+            foreach (var game in eligible)
+            {
+                ct.ThrowIfCancellationRequested();
+                if (!game.HasVersion || game.Deleted || game.Hidden) continue;
+                var title = game.Name; var local = game.LocalVersion!; var kind = game.VersionKind;
+                StatusText.Text = $"Steam sürümü kontrol ediliyor ({completed + 1}/{eligible.Length}): {title}";
+                SteamVersionResult result;
+                try { result = await versions.CheckAsync(title, local, kind, ct); }
+                catch (OperationCanceledException) when (ct.IsCancellationRequested) { throw; }
+                catch (Exception ex) when (ex is HttpRequestException or OperationCanceledException or System.Text.Json.JsonException or IOException or InvalidOperationException or KeyNotFoundException)
+                { store.Log("Steam sürüm kontrolü", ex); result = new(VersionCheckState.Error, null, "Steam'e erişilemedi veya yanıt okunamadı. Daha sonra yeniden deneyebilirsin."); }
+                ct.ThrowIfCancellationRequested();
+                // A rescan or manual edit may have changed the game while HTTP ran.
+                if (game.Name != title || game.LocalVersion != local || game.VersionKind != kind || game.Deleted || game.Hidden) continue;
+                game.VersionCheck = result.State; game.SteamVersion = result.Version;
+                game.VersionCheckMessage = result.Message; game.VersionCheckUrl = result.Url; game.VersionCheckedAt = DateTimeOffset.UtcNow;
+                store.SaveGame(game); game.Refresh(); completed++;
+                if (game.IsOutdated) outdated++;
+                if (result.State is VersionCheckState.Unavailable or VersionCheckState.Error) unavailable++;
+                UpdateDetails(false);
+            }
+            StatusText.Text = $"Sürüm kontrolü tamamlandı · {completed} oyun · {outdated} güncel değil · {unavailable} karşılaştırılamadı. Sürümü olmayanlar atlandı.";
+        }
+        catch (OperationCanceledException) { if (!exiting) StatusText.Text = "Sürüm kontrolü durduruldu; tamamlanan sonuçlar saklandı."; }
+        catch (Exception ex) { if (!exiting) ShowError("Sürüm kontrolü", ex); }
+        finally { versionScan.Dispose(); versionScan = null; if (!exiting) { UpdateCancelButton(); UpdateDetails(false); } }
+    }
+    private void VersionNews_Click(object sender, RoutedEventArgs e)
+    {
+        if (Selected?.VersionCheckUrl is { } url && Uri.TryCreate(url, UriKind.Absolute, out var uri) && uri.Scheme == "https" &&
+            uri.Host is "steamcommunity.com" or "store.steampowered.com")
+        {
+            try { Process.Start(new ProcessStartInfo(uri.ToString()) { UseShellExecute = true }); }
+            catch (Exception ex) { ShowError("Steam duyurusunu açma", ex); }
+        }
     }
     private void OpenFolder_Click(object sender, RoutedEventArgs e)
     {

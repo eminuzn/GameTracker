@@ -28,6 +28,7 @@ Alternatif: `Build.ps1` derleme ve kontrolleri, `Run.ps1` masaüstü uygulaması
 “Oyun klasörü ekle” ile bir ana klasör seç. Her doğrudan alt klasör tek oyun kabul edilir; içeriği recursive taranır. Oyunların hangi mağazadan veya kaynaktan kurulduğu bu mekanizmayı değiştirmez.
 
 - Exe adayları isim, metadata ve yardımcı araç sinyalleriyle değerlendirilir. Belirsizse kullanıcı seçimi istenir; kartta kırmızı yazı/ünlem görünür.
+- Liste ve ızgaradaki oyun kartını çift tıklamak oyunu başlatır. Favori düğmesini çift tıklamak oyun başlatmaz; exe eksikse seçim açılır.
 - Oyun boyutu, son oynama, toplam süreç çalışma süresi ve oturumlar saklanır. Başlatıcı süreç başka bir oyun sürecine devredebilir; takip exe'leri elle de eklenebilir.
 - Liste/ızgara geçişi ve ızgarada 3/4 sütun. Arama, favoriler, yalnızca exe seçilmeli filtresi; isim, son oynama ve boyut sıralaması iki yönde çalışır. Görünüm tercihleri saklanır.
 - Exe'si olmayan 50.000.000 bayt altındaki klasörler süzülür; kayıt/geçmiş silinmez. Geçerli exe'si seçilmiş küçük oyunlar görünür.
@@ -35,6 +36,18 @@ Alternatif: `Build.ps1` derleme ve kontrolleri, `Run.ps1` masaüstü uygulaması
 - Listeden kaldırma dosyaları silmez. Oyun silme, exe'nin alt dizini yerine ana klasörün doğrudan altındaki tüm oyun klasörünü hedefler. Geri dönüşüm ve çift onaylı kalıcı silme seçenekleri vardır; link/junction ve fiziksel klasör kimliği kontrol edilir.
 
 Yeni keşfedilen oyunda launcher geçmişi yoksa Windows Prefetch'teki tam exe yolu/volume kimliği eşleşen son çalıştırma tarihi bir kez aktarılır. Başarısız veya erişim reddedilmiş deneme de tekrar sorgulanmaz; mevcut kayıtlara geriye dönük uygulanmaz. Prefetch okumak yönetici yetkisi gerektirebilir. Tarih aktarımı geçmiş süre/oturum üretmez; sonraki canlı süreç gözlemleri tarihi günceller. Dosya değiştirme/erişim tarihleri oynama tarihi olarak kullanılmaz.
+
+## Oyun sürümleri
+
+Kütüphane taraması oyun kökündeki ve seçilen exe'nin üst dizinlerindeki küçük `version.txt`, `game.version`, `product.version`, `version.json`, `build.txt` dosyalarını ve exe ürün/dosya metadata'sını okur. Motor sürümü ve sıfır placeholder değerleri elenir. Dosyalarda açık sürüm yoksa bilinmiyor olarak bırakılır; tek bir evrensel oyun sürüm standardı yoktur.
+
+Detayda oyun adının altındaki **Oyun sürümü** alanı düzenlenebilir. **Değişiklikleri kaydet** ile elle girilen değer, boş bırakılmış olsa bile sonraki taramalarda korunur. **Sürümü algıla** manuel değeri bırakıp dosyalardan yeniden okur. Liste ve ızgarada yerel sürüm görünür.
+
+**Sürüm güncelliğini kontrol et** tüm görünen kütüphane kayıtlarını (arama/favori filtresinden bağımsız), **Sürümü kontrol et** seçili oyunu inceler. Sürümü olmayan oyunlar ağ isteği yapılmadan atlanır. Kontrol yalnızca bu düğmelerle yapılır; her açılışta Steam taranmaz. Sonuç ve zaman SQLite'ta saklanır; sürüm veya oyun adı değişirse sonuç sıfırlanır.
+
+Steam'de oyun/edition adı tek ve kesin eşleşmeli, sonuç ana oyun olmalıdır. Anahtarsız [Steam News API](https://partner.steamgames.com/doc/webapi/ISteamNews#GetNewsForApp) üzerinden son 100 resmi geliştirici duyurusu okunur; yayımlanmış patch/update başlıklarındaki sürümler kullanılır. Gelecek/beta/platform/DLC duyuruları ve belirsiz sürümler elenir. Sayısal bileşenler aynı hassasiyette karşılaştırılır (`1.9.0 < 1.10.0`). Daha yeni resmi duyuru sürümü bulunursa **sarı ⚠ Güncel değil** görünür; eşleşme **Steam duyurusuyla eşleşiyor** olarak belirtilir. Kaynak duyurusu detaydan açılabilir.
+
+Bu kontrol Steam'in bütün oyunlar için kesin en son binary sürümünü sağladığı anlamına gelmez. Steam build ID, exe dosya sürümü ve oyunun release numarası farklı olabilir. File metadata/build numarası release numarasıyla karşılaştırılmaz; biçimler farklıysa veya açık duyuru yoksa **Karşılaştırılamadı** gösterilir. Gerekirse oyunda görünen release sürümünü elle yaz. Herhangi bir mağazaya ait kurulum/hesap şartı yoktur; dosyalar otomatik güncellenmez ve oyun indirilmez.
 
 ## Kapaklar
 
