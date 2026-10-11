@@ -7,7 +7,7 @@ try {
     dotnet run --project tests/GameTracker.Tests -c Release --no-build
     if ($LASTEXITCODE -ne 0) { throw 'Testler başarısız.' }
     if ($Publish) {
-        dotnet publish src/GameTracker.Desktop -c Release -r win-x64 --self-contained true -m:1 -o artifacts/windows
+        dotnet publish src/GameTracker.Desktop -c Release -p:PublishProfile=Portable -m:1 -o artifacts/portable-win-x64
         if ($LASTEXITCODE -ne 0) { throw 'Publish başarısız.' }
     }
 } finally { Pop-Location }

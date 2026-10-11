@@ -4,6 +4,14 @@ Windows için mağaza hesabından bağımsız, yerel oyun launcher'ı. C# / .NET
 
 ## Çalıştırma
 
+GitHub Releases'teki `GameTracker.exe`, Windows x64 için tek dosyalı portable sürümdür. Kurulum veya .NET kurulumu gerektirmez; indirip çift tıkla. Veriler `%LOCALAPPDATA%\GameTracker` altında saklanır. Native .NET/WPF/SQLite bağımlılıkları ilk açılışta çalışma zamanı tarafından geçici dizine çıkarılır; exe'nin yanında DLL gerekmez. Dosya kod imzası içermez.
+
+Tek dosyalı sürümü üretmek için `Build.ps1 -Publish` veya:
+
+```powershell
+dotnet publish src/GameTracker.Desktop -c Release -p:PublishProfile=Portable -m:1 -o artifacts/portable-win-x64
+```
+
 Windows ve .NET 10 SDK gerekir. Komutları proje kökünde çalıştır:
 
 ```powershell
