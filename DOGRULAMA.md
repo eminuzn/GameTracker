@@ -57,6 +57,8 @@ Online kontrol her açılışta çalışmaz. Steam'de bütün oyunların ortak r
 
 ## Sınırlar
 
+Silme seçimi uygulamanın koyu temasına uygun özel modal ile yapılır; arka plan kararılır. Ayrı WPF QA'da **29 modal ve entegrasyon kontrolü** geçti: üç eşit genişlikte yan yana düğme, varsayılan iptal odağı/Enter/Escape ayarları, owner/özel pencere, kalıcı silme/geri dönüşüm seçiminin doğru sonucu ve İptal/X/pencere kapatma durumlarında işlem seçilmemesi. Gerçek MainWindow üzerinden iptalde arka planın geri gelmesi ve kaydın korunması doğrulandı. Bu kontroller yalnızca seçim arayüzünü açtı; dosya veya oyun silmedi. Modal ekran görüntüsü ayrıca incelendi. Kalıcı silmenin eski ikinci MessageBox onayı kaldırıldı; klasör/süreç/kimlik denetimleri GameOperations içinde korunur.
+
 - Gerçek oyun süreçlerini başlatma, yükseltilmiş süreçlere erişim ve geri dönüşüm kutusu dialog akışları ayrıca kullanıcı denemesi gerektirir. Kalıcı silme yalnızca testin oluşturduğu fixture klasöründe doğrulandı.
 - Steam/SteamGridDB canlı arama ve görsel indirme denemeleri yapıldı. IGDB/RAWG/Shopping için gerçek servis anahtarları sağlanmadı; bu kaynaklar kontrollü HTTP testleriyle doğrulandı.
 - Prefetch erişimi Windows izinlerine bağlıdır. Okuma engelliyse uygulama geçmiş tarihi boş bırakır; Windows ayarlarını/izinlerini değiştirmez. Public MIT Windows 10 fixture'ı bağımsız beklenen 2016-01-13 18:06:55.3344577 UTC zamanı ile eşleşti; kaynak/lisans `tests/GameTracker.Tests/Fixtures` altında bulunur.

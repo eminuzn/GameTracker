@@ -561,10 +561,11 @@ public partial class MainWindow : Window
     private async void Delete_Click(object sender, RoutedEventArgs e)
     {
         if (busy || Selected is not { } game) return;
-        var mode = MessageBox.Show(this, $"{game.Name}\n{game.FolderPath}\n\nTüm oyun klasörü kaldırılacak. İçindeki save dosyaları da dahildir.\n\nEvet: Geri dönüşüm kutusuna taşı (alan hemen boşalmaz).\nHayır: Kalıcı silme onayına geç.\nİptal: Vazgeç.", "Oyun klasörünü sil", MessageBoxButton.YesNoCancel, MessageBoxImage.Warning, MessageBoxResult.Cancel);
-        if (mode == MessageBoxResult.Cancel) return;
-        bool permanent = mode == MessageBoxResult.No;
-        if (permanent && MessageBox.Show(this, $"{game.FolderPath}\n\nBu klasör KALICI olarak silinecek. Devam edilsin mi?", "Kalıcı silme", MessageBoxButton.YesNo, MessageBoxImage.Warning, MessageBoxResult.No) != MessageBoxResult.Yes) return;
+        var dialog = new DeleteGameDialog(game) { Owner = this, Icon = Icon };
+        DeleteModalBackdrop.Visibility = Visibility.Visible;
+        try { if (dialog.ShowDialog() != true || dialog.Choice == GameDeleteChoice.Cancel) return; }
+        finally { DeleteModalBackdrop.Visibility = Visibility.Collapsed; }
+        bool permanent = dialog.Choice == GameDeleteChoice.Permanent;
         busy = true;
         try
         {

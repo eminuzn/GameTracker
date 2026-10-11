@@ -33,7 +33,7 @@ Alternatif: `Build.ps1` derleme ve kontrolleri, `Run.ps1` masaüstü uygulaması
 - Liste/ızgara geçişi ve ızgarada 3/4 sütun. Arama, favoriler, yalnızca exe seçilmeli filtresi; isim, son oynama ve boyut sıralaması iki yönde çalışır. Görünüm tercihleri saklanır.
 - Exe'si olmayan 50.000.000 bayt altındaki klasörler süzülür; kayıt/geçmiş silinmez. Geçerli exe'si seçilmiş küçük oyunlar görünür.
 - X düğmesi sistem tepsisine küçültür; takip sürer. “Tamamen çık” uygulamayı kapatır, oyunu kapatmaz. Uygulama aynı anda tek örnek çalıştırır.
-- Listeden kaldırma dosyaları silmez. Oyun silme, exe'nin alt dizini yerine ana klasörün doğrudan altındaki tüm oyun klasörünü hedefler. Geri dönüşüm ve çift onaylı kalıcı silme seçenekleri vardır; link/junction ve fiziksel klasör kimliği kontrol edilir.
+- Listeden kaldırma dosyaları silmez. Oyun silme, exe'nin alt dizini yerine ana klasörün doğrudan altındaki tüm oyun klasörünü hedefler. Özel modalda yan yana **Tamamen sil**, **Geri dönüşüme taşı**, **İptal** düğmeleri bulunur; seçim doğrudan ilgili işleme geçer. Kapatma/Escape ve varsayılan Enter işlemi iptal eder. Link/junction, çalışan süreç ve fiziksel klasör kimliği kontrol edilir.
 
 Yeni keşfedilen oyunda launcher geçmişi yoksa Windows Prefetch'teki tam exe yolu/volume kimliği eşleşen son çalıştırma tarihi bir kez aktarılır. Başarısız veya erişim reddedilmiş deneme de tekrar sorgulanmaz; mevcut kayıtlara geriye dönük uygulanmaz. Prefetch okumak yönetici yetkisi gerektirebilir. Tarih aktarımı geçmiş süre/oturum üretmez; sonraki canlı süreç gözlemleri tarihi günceller. Dosya değiştirme/erişim tarihleri oynama tarihi olarak kullanılmaz.
 

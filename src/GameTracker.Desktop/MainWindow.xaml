@@ -136,6 +136,7 @@
     </Grid>
     <Grid Grid.Row="3" Margin="0,16,0,0"><Grid.ColumnDefinitions><ColumnDefinition /><ColumnDefinition Width="Auto" /></Grid.ColumnDefinitions><TextBlock x:Name="StatusText" Text="Hazır" Foreground="#8E9AB3" TextTrimming="CharacterEllipsis" /><Button Grid.Column="1" x:Name="CancelButton" Content="Taramayı durdur" Click="CancelScan_Click" Visibility="Collapsed" /></Grid>
   </Grid>
+      <Border x:Name="DeleteModalBackdrop" Grid.RowSpan="2" Background="#990D111C" Visibility="Collapsed" />
     </Grid>
   </Border>
 </Window>
