@@ -1,0 +1,8 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup><TargetFramework>net10.0</TargetFramework><OutputType>Exe</OutputType></PropertyGroup>
+  <ItemGroup>
+    <ProjectReference Include="../../src/GameTracker.Infrastructure/GameTracker.Infrastructure.csproj" />
+    <ProjectReference Include="../../src/GameTracker.CoverService/GameTracker.CoverService.csproj" />
+  </ItemGroup>
+  <ItemGroup><None Update="Fixtures/*.pf" CopyToOutputDirectory="PreserveNewest" /></ItemGroup>
+</Project>
