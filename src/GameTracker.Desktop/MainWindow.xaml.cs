@@ -42,7 +42,7 @@ public partial class MainWindow : Window
     {
         this.store = store;
         InitializeComponent();
-        Icon = System.Windows.Media.Imaging.BitmapFrame.Create(new Uri("pack://application:,,,/Assets/GameTracker.ico"));
+        Icon = System.Windows.Media.Imaging.BitmapFrame.Create(new Uri("pack://application:,,,/GameTracker;component/Assets/GameTracker.ico"));
         SourceInitialized += (_, _) => WindowBounds.Attach(this);
         roots = store.Roots(); games = new(store.Games());
         viewSettings = store.LoadViewSettings();
@@ -59,7 +59,7 @@ public partial class MainWindow : Window
         FavoritesOnlyBox.IsChecked = viewSettings.FavoritesOnly;
         ExeSelectionOnlyBox.IsChecked = viewSettings.ExeSelectionOnly;
         initializingView = false; ApplyListOptions(false);
-        using (var iconStream = System.Windows.Application.GetResourceStream(new Uri("pack://application:,,,/Assets/GameTracker.ico")).Stream)
+        using (var iconStream = System.Windows.Application.GetResourceStream(new Uri("pack://application:,,,/GameTracker;component/Assets/GameTracker.ico")).Stream)
         using (var resourceIcon = new System.Drawing.Icon(iconStream, 32, 32))
             trayIcon = (System.Drawing.Icon)resourceIcon.Clone();
         tray = new Forms.NotifyIcon { Text = "GameTracker · takip açık", Icon = trayIcon, Visible = true };

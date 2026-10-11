@@ -24,7 +24,19 @@ Bu komut exe adaylarını ve kapak akışını inceler; oyunu başlatmaz/silmez.
 
 ## WPF kontrolleri
 
-Ayrı geçici kütüphane ile **66 WPF runtime kontrolü** geçti. Bunlar repo dışındaki yerel QA harness'iyle yapıldı; yukarıdaki console komutunun parçası değildir.
+Izgarada tekrarlı kaydırma için repoda ayrıca Windows console harness bulunur:
+
+```powershell
+dotnet run --project tests/GameTracker.Desktop.Tests -c Release --no-build
+```
+
+`Build.ps1` Windows'ta bu kontrolü de çalıştırır. Tamamen bellekte örnek oyunlar kullanır; SQLite, oyun klasörleri, ağ ve tray'e erişmez. 7/13/123 oyun ve 3/4 sütunda 6 senaryo, 72 aşağı/üst uç turu, örtüşen piksel kaydırmaları, filtreyi boşaltıp geri açma, kayıt ekleme/çıkarma ve boyutlandırmada **9.840 assertion geçti**. Görünen her kartın panelde bağlı olması, doğru oyun/bounds, tüm satırların extent'i ve sınırlı container sayısı doğrulanır.
+
+Kaybolma nedeni doğrulandı: `GenerateNext(out isNew)` yeniden kullanılan container için de false döndürür. Eski panel yalnızca true olduğunda kartı görsel ağaca ekliyordu; cleanup ile çıkarılmış container geri eklenmiyordu. 123 oyunluk WPF arayüz testinde ilk aşağı/üst turunda görünür kartın detached olması yakalandı. Panel artık gerçek çocuk/sıra eşleşmesini kontrol eder, yeni veya yeniden bağlanan kartı hazırlayıp ölçer. Liste/ızgara değiştirerek paneli sıfırlamak gerekmez. WPF'nin aynı ayrımı nasıl yaptığı [VirtualizingStackPanel kaynak kodunda](https://source.dot.net/PresentationFramework/System/Windows/Controls/VirtualizingStackPanel.cs.html) `AddContainerFromGenerator` içinde görülebilir.
+
+Ek olarak gerçek MainWindow ile eski arayüz kontrolleri ve 30 aşağı/üst turu dahil **67 WPF runtime kontrolü geçti**. Release build 0 hata/0 uyarı; genel console harness 147 kontrol geçti. Portable alpha.2 aynı düzeltmeyle tek exe olarak yeniden yayınlanır.
+
+Önceki arayüz doğrulamasında ayrı geçici kütüphane ile **66 WPF runtime kontrolü** geçti. Bunlar repo dışındaki yerel QA harness'iyle yapıldı; yukarıdaki console komutunun parçası değildir.
 
 - Liste/ızgara geçişi, 3/4 sütun, favoriler, exe filtresi ve boş sonuç mesajı.
 - 123 oyunla yalnızca görünür/tampon satırların oluşturulması, container geri dönüşümü, uzak satırlara kaydırma ve filtre sonrası offset sınırı.

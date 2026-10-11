@@ -48,11 +48,17 @@ public sealed class LibraryGridPanel : VirtualizingPanel, IScrollInfo
                 for (var index = first; index <= last; index++, childIndex++)
                 {
                     var child = (UIElement)generator.GenerateNext(out var isNew);
-                    if (isNew)
+                    // GenerateNext reports false for recycled containers too.
+                    // Such a container may have been detached by our cleanup;
+                    // always restore its visual position before measuring it.
+                    var needsAttach = childIndex >= InternalChildren.Count || !ReferenceEquals(InternalChildren[childIndex], child);
+                    if (needsAttach)
                     {
+                        var oldIndex = InternalChildren.IndexOf(child);
+                        if (oldIndex >= 0) RemoveInternalChildRange(oldIndex, 1);
                         if (childIndex >= InternalChildren.Count) AddInternalChild(child); else InsertInternalChild(childIndex, child);
-                        generator.PrepareItemContainer(child);
                     }
+                    if (isNew || needsAttach) generator.PrepareItemContainer(child);
                     child.Measure(new Size(width, RowHeight));
                 }
         }

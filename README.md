@@ -17,6 +17,7 @@ Windows ve .NET 10 SDK gerekir. Komutları proje kökünde çalıştır:
 ```powershell
 dotnet build GameTracker.sln -c Release -m:1
 dotnet run --project tests/GameTracker.Tests -c Release --no-build
+dotnet run --project tests/GameTracker.Desktop.Tests -c Release --no-build
 dotnet run --project src/GameTracker.Desktop
 ```
 
@@ -70,5 +71,6 @@ Veriler kullanıcının `%LOCALAPPDATA%\GameTracker` dizininde tutulur: `gametra
 - `src/GameTracker.Desktop`: WPF arayüzü, sistem tepsisi ve uygulama ikonu.
 - `src/GameTracker.CoverService`: sunucu tarafındaki kapak sağlayıcıları.
 - `tests/GameTracker.Tests`: bağımsız console kontrolleri ve lisanslı fixture'lar.
+- `tests/GameTracker.Desktop.Tests`: Windows üzerinde bellekte çalışan tekrarlı ızgara kaydırma/filtre/resize kontrolleri.
 
 Kontrol sonuçları ve sınırları [DOGRULAMA.md](DOGRULAMA.md), teknik tasarım [TEKNIK-ANALIZ.md](TEKNIK-ANALIZ.md) içindedir. Proje alpha aşamasındadır.
